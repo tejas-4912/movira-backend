@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const cors = require('cors')
 require('dotenv').config()
+process.env.GROQ_API_KEY = process.env.GROQ_API_KEY || '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'
 
 const app = express()
 app.use(cors())
