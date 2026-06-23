@@ -5,8 +5,6 @@ const jwt = require('jsonwebtoken')
 const cors = require('cors')
 require('dotenv').config()
 
-const { GoogleGenerativeAI } = require('@google/generative-ai')
-
 const app = express()
 app.use(cors())
 app.use(express.json())
@@ -20,25 +18,12 @@ const userSchema = new mongoose.Schema({
   recoveryProgress: { type: Number, default: 0 },
   onboardingComplete: { type: Boolean, default: false },
   profile: {
-    age: Number,
-    gender: String,
-    height: Number,
-    weight: Number,
-    bmi: Number,
-    bloodGroup: String,
-    occupation: String,
-    activityLevel: String,
-    smoking: String,
-    alcohol: String,
-    chronicConditions: [String],
-    injuryHistory: [
-      { bodyPart: String, severity: String, year: String, details: String }
-    ],
-    currentMedications: String,
-    allergies: String,
-    surgeryHistory: String,
-    familyHistory: [String],
-    emergencyContact: String,
+    age: Number, gender: String, height: Number, weight: Number, bmi: Number,
+    bloodGroup: String, occupation: String, activityLevel: String,
+    smoking: String, alcohol: String, chronicConditions: [String],
+    injuryHistory: [{ bodyPart: String, severity: String, year: String, details: String }],
+    currentMedications: String, allergies: String, surgeryHistory: String,
+    familyHistory: [String], emergencyContact: String,
   },
   createdAt: { type: Date, default: Date.now },
 })
@@ -97,11 +82,7 @@ app.put('/api/user/profile', authMiddleware, async (req, res) => {
       const heightM = profile.height / 100
       profile.bmi = parseFloat((profile.weight / (heightM * heightM)).toFixed(1))
     }
-    const user = await User.findByIdAndUpdate(
-      req.userId,
-      { profile, onboardingComplete: true },
-      { new: true }
-    )
+    const user = await User.findByIdAndUpdate(req.userId, { profile, onboardingComplete: true }, { new: true })
     res.json({ user: { id: user._id, name: user.name, email: user.email, onboardingComplete: user.onboardingComplete, profile: user.profile } })
   } catch (err) {
     res.status(500).json({ message: 'Server error' })
@@ -118,7 +99,7 @@ app.get('/api/user/profile', authMiddleware, async (req, res) => {
   }
 })
 
-// ── Gemini AI diagnosis (server-side) ──
+// ── AI diagnosis via Groq ──
 app.post('/api/ai/diagnose', authMiddleware, async (req, res) => {
   try {
     const { answers, category, chiefComplaint } = req.body
@@ -143,7 +124,7 @@ Based on this, provide:
 5. Red flags to watch for (when to see a doctor urgently)
 6. Expected recovery timeline
 
-Format your response in clear sections using these exact headings:
+Format your response using these exact headings:
 DIAGNOSIS:
 EXERCISES:
 DIET:
@@ -151,14 +132,24 @@ LIFESTYLE:
 RED FLAGS:
 TIMELINE:`
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-    const result = await model.generateContent(prompt)
-    const text = result.response.text()
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'llama3-8b-8192',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 1500,
+      }),
+    })
 
-    res.json({ diagnosis: text })
+    const data = await response.json()
+    const diagnosis = data.choices?.[0]?.message?.content || 'Unable to generate diagnosis.'
+    res.json({ diagnosis })
   } catch (err) {
-    console.error('Gemini error:', err.message)
+    console.error('Groq error:', err.message)
     res.status(500).json({ message: 'AI diagnosis failed', error: err.message })
   }
 })
