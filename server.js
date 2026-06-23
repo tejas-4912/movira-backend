@@ -26,6 +26,17 @@ const userSchema = new mongoose.Schema({
     currentMedications: String, allergies: String, surgeryHistory: String,
     familyHistory: [String], emergencyContact: String,
   },
+  progress: {
+    streak: { type: Number, default: 0 },
+    bestStreak: { type: Number, default: 0 },
+    xp: { type: Number, default: 0 },
+    level: { type: Number, default: 1 },
+    recoveryProgress: { type: Number, default: 0 },
+    waterMl: { type: Number, default: 0 },
+    lastActiveDate: { type: String, default: null },
+    exercisesDoneToday: [Number],
+    challengesDoneToday: [String],
+  },
   createdAt: { type: Date, default: Date.now },
 })
 
@@ -154,6 +165,27 @@ TIMELINE:`
   } catch (err) {
     console.error('Groq error:', err.message)
     res.status(500).json({ message: 'AI diagnosis failed', error: err.message })
+  }
+})
+
+// ── Get progress ──
+app.get('/api/user/progress', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select('progress')
+    res.json({ progress: user.progress || {} })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// ── Save progress ──
+app.put('/api/user/progress', authMiddleware, async (req, res) => {
+  try {
+    const { progress } = req.body
+    const user = await User.findByIdAndUpdate(req.userId, { progress }, { new: true })
+    res.json({ progress: user.progress })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' })
   }
 })
 
