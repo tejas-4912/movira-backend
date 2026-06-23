@@ -102,6 +102,8 @@ app.get('/api/user/profile', authMiddleware, async (req, res) => {
 // ── AI diagnosis via Groq ──
 app.post('/api/ai/diagnose', authMiddleware, async (req, res) => {
   try {
+    const groqKey = process.env.GROQ_API_KEY
+    console.log('GROQ KEY present:', !!groqKey, groqKey ? groqKey.substring(0,8) : 'MISSING')
     const { answers, category, chiefComplaint } = req.body
 
     const answerText = Object.entries(answers)
