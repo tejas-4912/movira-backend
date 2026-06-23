@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken')
 const cors = require('cors')
 require('dotenv').config()
 
+const { GoogleGenerativeAI } = require('@google/generative-ai')
+
 const app = express()
 app.use(cors())
 app.use(express.json())
@@ -20,8 +22,8 @@ const userSchema = new mongoose.Schema({
   profile: {
     age: Number,
     gender: String,
-    height: Number,       // cm
-    weight: Number,       // kg
+    height: Number,
+    weight: Number,
     bmi: Number,
     bloodGroup: String,
     occupation: String,
@@ -30,12 +32,7 @@ const userSchema = new mongoose.Schema({
     alcohol: String,
     chronicConditions: [String],
     injuryHistory: [
-      {
-        bodyPart: String,
-        severity: String,
-        year: String,
-        details: String,
-      }
+      { bodyPart: String, severity: String, year: String, details: String }
     ],
     currentMedications: String,
     allergies: String,
@@ -96,7 +93,6 @@ app.post('/api/auth/login', async (req, res) => {
 app.put('/api/user/profile', authMiddleware, async (req, res) => {
   try {
     const { profile } = req.body
-    // Calculate BMI
     if (profile.height && profile.weight) {
       const heightM = profile.height / 100
       profile.bmi = parseFloat((profile.weight / (heightM * heightM)).toFixed(1))
@@ -119,6 +115,51 @@ app.get('/api/user/profile', authMiddleware, async (req, res) => {
     res.json({ user })
   } catch (err) {
     res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// ── Gemini AI diagnosis (server-side) ──
+app.post('/api/ai/diagnose', authMiddleware, async (req, res) => {
+  try {
+    const { answers, category, chiefComplaint } = req.body
+
+    const answerText = Object.entries(answers)
+      .map(([key, val]) => `${key}: ${val}`)
+      .join('\n')
+
+    const prompt = `You are an expert physiotherapist. A patient has completed a detailed assessment.
+
+Category: ${category}
+Chief Complaint: ${chiefComplaint || 'Not specified'}
+
+Patient Answers:
+${answerText}
+
+Based on this, provide:
+1. A likely diagnosis or condition (2-3 sentences)
+2. 4-5 specific recommended exercises with sets/reps
+3. 3 diet/nutrition tips relevant to their condition
+4. 3 lifestyle modifications
+5. Red flags to watch for (when to see a doctor urgently)
+6. Expected recovery timeline
+
+Format your response in clear sections using these exact headings:
+DIAGNOSIS:
+EXERCISES:
+DIET:
+LIFESTYLE:
+RED FLAGS:
+TIMELINE:`
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const result = await model.generateContent(prompt)
+    const text = result.response.text()
+
+    res.json({ diagnosis: text })
+  } catch (err) {
+    console.error('Gemini error:', err.message)
+    res.status(500).json({ message: 'AI diagnosis failed', error: err.message })
   }
 })
 
