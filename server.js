@@ -36,6 +36,21 @@ const userSchema = new mongoose.Schema({
     lastActiveDate: { type: String, default: null },
     exercisesDoneToday: [Number],
     challengesDoneToday: [String],
+    exerciseHistory: [{ date: String, completed: Boolean, count: Number }],
+  },
+  journal: [{
+    date: String,
+    painLevel: Number,
+    painLocation: String,
+    notes: String,
+    mood: String,
+    createdAt: { type: Date, default: Date.now },
+  }],
+  activeProtocol: {
+    protocolId: String,
+    startDate: String,
+    currentWeek: { type: Number, default: 1 },
+    completedDays: [String],
   },
   createdAt: { type: Date, default: Date.now },
 })
@@ -111,63 +126,6 @@ app.get('/api/user/profile', authMiddleware, async (req, res) => {
   }
 })
 
-// ── AI diagnosis via Groq ──
-app.post('/api/ai/diagnose', authMiddleware, async (req, res) => {
-  try {
-    const groqKey = process.env.GROQ_API_KEY
-    console.log('GROQ KEY present:', !!groqKey, groqKey ? groqKey.substring(0,8) : 'MISSING')
-    const { answers, category, chiefComplaint } = req.body
-
-    const answerText = Object.entries(answers)
-      .map(([key, val]) => `${key}: ${val}`)
-      .join('\n')
-
-    const prompt = `You are an expert physiotherapist. A patient has completed a detailed assessment.
-
-Category: ${category}
-Chief Complaint: ${chiefComplaint || 'Not specified'}
-
-Patient Answers:
-${answerText}
-
-Based on this, provide:
-1. A likely diagnosis or condition (2-3 sentences)
-2. 4-5 specific recommended exercises with sets/reps
-3. 3 diet/nutrition tips relevant to their condition
-4. 3 lifestyle modifications
-5. Red flags to watch for (when to see a doctor urgently)
-6. Expected recovery timeline
-
-Format your response using these exact headings:
-DIAGNOSIS:
-EXERCISES:
-DIET:
-LIFESTYLE:
-RED FLAGS:
-TIMELINE:`
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'llama3-8b-8192',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 1500,
-      }),
-    })
-
-    const data = await response.json()
-    const diagnosis = data.choices?.[0]?.message?.content || 'Unable to generate diagnosis.'
-    res.json({ diagnosis })
-  } catch (err) {
-    console.error('Groq error:', err.message)
-    res.status(500).json({ message: 'AI diagnosis failed', error: err.message })
-  }
-})
-
 // ── Get progress ──
 app.get('/api/user/progress', authMiddleware, async (req, res) => {
   try {
@@ -189,12 +147,103 @@ app.put('/api/user/progress', authMiddleware, async (req, res) => {
   }
 })
 
+// ── Journal: get all entries ──
+app.get('/api/journal', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select('journal')
+    res.json({ journal: user.journal || [] })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// ── Journal: add entry ──
+app.post('/api/journal', authMiddleware, async (req, res) => {
+  try {
+    const { date, painLevel, painLocation, notes, mood } = req.body
+    const user = await User.findById(req.userId)
+    // Remove existing entry for same date
+    user.journal = user.journal.filter(e => e.date !== date)
+    user.journal.unshift({ date, painLevel, painLocation, notes, mood })
+    await user.save()
+    res.json({ journal: user.journal })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// ── Journal: delete entry ──
+app.delete('/api/journal/:date', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId)
+    user.journal = user.journal.filter(e => e.date !== req.params.date)
+    await user.save()
+    res.json({ journal: user.journal })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// ── Active protocol: get ──
+app.get('/api/protocol', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select('activeProtocol')
+    res.json({ activeProtocol: user.activeProtocol || null })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// ── Active protocol: save ──
+app.put('/api/protocol', authMiddleware, async (req, res) => {
+  try {
+    const { activeProtocol } = req.body
+    const user = await User.findByIdAndUpdate(req.userId, { activeProtocol }, { new: true })
+    res.json({ activeProtocol: user.activeProtocol })
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// ── AI diagnosis via Groq ──
+app.post('/api/ai/diagnose', authMiddleware, async (req, res) => {
+  try {
+    const groqKey = process.env.GROQ_API_KEY
+    console.log('GROQ KEY present:', !!groqKey, groqKey ? groqKey.substring(0,8) : 'MISSING')
+    const { answers, category, chiefComplaint } = req.body
+    const answerText = Object.entries(answers).map(([key, val]) => `${key}: ${val}`).join('\n')
+    const prompt = `You are an expert physiotherapist. A patient has completed a detailed assessment.
+Category: ${category}
+Chief Complaint: ${chiefComplaint || 'Not specified'}
+Patient Answers:\n${answerText}
+Based on this, provide:
+1. A likely diagnosis or condition (2-3 sentences)
+2. 4-5 specific recommended exercises with sets/reps
+3. 3 diet/nutrition tips relevant to their condition
+4. 3 lifestyle modifications
+5. Red flags to watch for (when to see a doctor urgently)
+6. Expected recovery timeline
+Format your response using these exact headings:
+DIAGNOSIS:\nEXERCISES:\nDIET:\nLIFESTYLE:\nRED FLAGS:\nTIMELINE:`
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+      body: JSON.stringify({ model: 'llama3-8b-8192', messages: [{ role: 'user', content: prompt }], max_tokens: 1500 }),
+    })
+    const data = await response.json()
+    const diagnosis = data.choices?.[0]?.message?.content || 'Unable to generate diagnosis.'
+    res.json({ diagnosis })
+  } catch (err) {
+    console.error('Groq error:', err.message)
+    res.status(500).json({ message: 'AI diagnosis failed', error: err.message })
+  }
+})
+
 // ── Connect & start ──
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('Connected to MongoDB')
-    app.listen(process.env.PORT || 5000, () =>
-      console.log(`Server running on port ${process.env.PORT || 5000}`)
-    )
+    app.listen(process.env.PORT || 5000, () => console.log(`Server running on port ${process.env.PORT || 5000}`))
   })
   .catch(err => console.error('MongoDB connection error:', err))
