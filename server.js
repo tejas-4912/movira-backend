@@ -240,6 +240,28 @@ DIAGNOSIS:\nEXERCISES:\nDIET:\nLIFESTYLE:\nRED FLAGS:\nTIMELINE:`
   }
 })
 
+
+// ── AI Chat ──
+app.post('/api/ai/chat', authMiddleware, async (req, res) => {
+  try {
+    const { message } = req.body
+    const prompt = `You are a friendly expert physiotherapist assistant named MOVIRA AI. Answer the following patient question clearly and helpfully in 2-4 sentences. Be practical and specific. If the question is serious, advise seeing a professional.
+
+Patient question: ${message}`
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+      body: JSON.stringify({ model: 'llama3-8b-8192', messages: [{ role: 'user', content: prompt }], max_tokens: 300 }),
+    })
+    const data = await response.json()
+    const reply = data.choices?.[0]?.message?.content || 'I could not answer that. Please try again.'
+    res.json({ reply })
+  } catch (err) {
+    res.status(500).json({ message: 'Chat failed' })
+  }
+})
+
 // ── Connect & start ──
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
