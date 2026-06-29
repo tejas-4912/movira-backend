@@ -272,7 +272,7 @@ mongoose.connect(process.env.MONGODB_URI)
     app.listen(process.env.PORT || 5000, () => console.log(`Server running on port ${process.env.PORT || 5000}`)
     // Keep-alive ping every 14 minutes to prevent Render spin-down
     setInterval(() => {
-      fetch(`https://movira-backend.onrender.com/health`).catch(() => {})
+      fetch('https://movira-backend.onrender.com/health').catch(() => {})
     }, 14 * 60 * 1000))
   })
   .catch(err => console.error('MongoDB connection error:', err))
